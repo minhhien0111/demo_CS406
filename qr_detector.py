@@ -157,15 +157,20 @@ def combine_points(points):
 
   return output
 
+def scale(line):
+  a, b, c = line
+  v = max([abs(a), abs(b), abs(c)])
+  return [a/v, b/v, c/v]
+
 def lineEq(p1, p2):
   ''' return ax + by + c = 0 '''
   x1, y1 = p1
   x2, y2 = p2
   if x1 == np.inf:
-    return [y1[0], y1[1], -y1[0]*x2-y1[1]*y2]
+    return scale([y1[0], y1[1], -y1[0]*x2-y1[1]*y2])
   if x2 == np.inf:
-    return [y2[0], y2[1], -y2[0]*x1-y2[1]*y1]
-  return [y2-y1, x1-x2, -x1*(y2-y1) + y1*(x2-x1)]
+    return scale([y2[0], y2[1], -y2[0]*x1-y2[1]*y1])
+  return scale([y2-y1, x1-x2, -x1*(y2-y1) + y1*(x2-x1)])
 
 def parallelLine(eq, point):
   a, b, _ = eq
@@ -421,11 +426,6 @@ def reverseMap(points, refPoint):
   return ratio(PaIs[0], A1, refPoint, B1), ratio(PaIs[1], A2, refPoint, B2)
 
 def perspective_transform(img, points, resolution):
-  minigrid = perspective_points(points, 26).reshape((-1,  2))
-  plt.imshow(img)
-  plt.scatter(minigrid[:, 0], minigrid[:, 1])
-  plt.show()
-
   grid = perspective_points(points, resolution)
   fl_grid = np.floor(grid).astype(int)
   unit = np.ones((resolution, resolution), dtype=int)
@@ -502,6 +502,7 @@ def sort_ring(ring, anchor):
   return np.array(out)
 
 def orderFinderRing(finder):
+  # print(finder)
   ring1, ring2, ring3 = finder
   out = []
   idx = np.argmin(((ring1 * (1-ring1)) ** 2).sum(axis=1))
@@ -537,6 +538,7 @@ def alignmentLines(referPoints, left, right, other):
 
   point1, point2 = referPoints[left][0][2], referPoints[other][0][2]
   d = np.linalg.norm(point2 - point1) 
+  # print(np.linalg.norm(referPoints[left][0][2] - referPoints[left][0][3 if other == 1 else 1]))
   d /= np.linalg.norm(referPoints[left][0][2] - referPoints[left][0][3 if other == 1 else 1])
   d = d * 6 - 1
   d = int(np.round((d - 3) / 4))
@@ -566,9 +568,10 @@ def drawLines(eq, minX=None, minY=None, maxX=None, maxY=None):
   minY = solveForY(eq, minX) if minY is None else minY
   maxX = solveForX(eq, maxY) if maxX is None else maxX
   maxY = solveForY(eq, maxX) if maxY is None else maxY
-  plt.plot([minX, maxX], [minY, maxY], color='red', lw=0.5)
+  print(minX, minY, maxX, maxY)
+  plt.plot([minX, maxX], [minY, maxY], color='red', lw=0.8)
 
-def qrLocator(imageName, resolution=400, verbose=False):
+def qrLocator(imageName, resolution=400, verbose=0):
   im, finders = detectFinderPattern(imageName, verbose=verbose)
   centers = order_finders(finders)
   anchors = findAnchors(finders, centers)
@@ -586,7 +589,8 @@ def qrLocator(imageName, resolution=400, verbose=False):
   ordered_finders = []
   for newF in new_finders:
     ordered_finders.append(orderFinderRing(newF)*resolution)
-    
+  np.set_printoptions(suppress=True)
+
   referPoints = []
   for finder in ordered_finders:
     outer = (finder[0] + finder[1]) / 2
@@ -595,8 +599,25 @@ def qrLocator(imageName, resolution=400, verbose=False):
     inner = (finder[2]*2 + center) / 3
     referPoints.append([outer, middle, inner, center])
 
+  plt.imshow(imout)
+  for rps in referPoints:
+    for points in rps:
+      for point in points:
+        plt.scatter(point[0], point[1], color='orange', marker='.')
+    # plt.scatter(rps[-1][0], rps[-1][1])
+
   hlines = alignmentLines(referPoints, 0, 2, 1)
   vlines = alignmentLines(referPoints, 0, 1, 2)
+
+  for line in vlines:
+    drawLines(line, minX=0, maxX=resolution)
+
+  for line in hlines:
+    drawLines(line, minY=0, maxY=resolution)
+
+  plt.axis('off')
+  plt.show()
+
   return imout, hlines, vlines
 
 
@@ -618,6 +639,17 @@ def removeObscure(im, verbose=0):
   mask = (imH - lowerbound) % 180 <= (upperbound - lowerbound) % 180
   return mask
 
+def getObscureMask(im, verbose=0):
+  im2 = (im+127).astype(np.float32)
+  imM = im2.mean(axis=2, keepdims=True)
+  imV = np.abs(im2 - imM).mean(axis=2)
+  maskOut = (imV / (np.max(imV) + 1e-7) * 255).astype(np.uint8)
+  if verbose >= 1:
+    print(maskOut)
+    plt.imshow(maskOut, cmap='gray')
+    plt.show()
+  return maskOut
+
 
 def getQRData(im, hlines, vlines, mask, rd=3):
   imV = cv2.cvtColor(im, cv2.COLOR_BGR2HSV)[:, :, 2]
@@ -632,8 +664,9 @@ def getQRData(im, hlines, vlines, mask, rd=3):
       x, y = intersection(hline, vline)
       x = int(x)
       y = int(y)
-      pV = imV[x-rd:x+rd+1, y-rd:y+rd+1].mean()
-      accepted = mask[x-rd:x+rd+1, y-rd:y+rd+1].sum () > (rd*2+1)**2/2
+      sec = imV[x-rd:x+rd+1, y-rd:y+rd+1]
+      pV = sec.mean() if np.prod(sec.shape) > 0 else None
+      accepted = pV is not None and (mask[x-rd:x+rd+1, y-rd:y+rd+1].sum() > (rd*2+1)**2/2)
       if not accepted:
         row.append(-1)
       elif pV < (mn + mx) / 2:

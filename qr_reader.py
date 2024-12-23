@@ -1,33 +1,39 @@
-from qr_detector import qrLocator, removeObscure, getQRData
+from qr_detector import qrLocator, getQRData, removeObscure, getObscureMask
 from qr_decoder import rawQRParse
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 
 def readQR(imgName, verbose=0):
   try:
     im, hlines, vlines = qrLocator(imgName, verbose=verbose)
-    mask = removeObscure(im)
-    qrdata = getQRData(im, hlines, vlines, mask)
+    mask = getObscureMask(im, verbose)
+    for i in range(10, 101, 10):
+      try:
+        qrdata = getQRData(im, hlines, vlines, mask <= i)
+        data = rawQRParse(qrdata)
+        if type(data) == bytes:
+          break
+      except:
+        pass
+
+    if type(data) != bytes:
+      return None
+
+    print(qrdata)
 
     if verbose >= 1:
-      # fig, ax = plt.subplots(1, 2)
-      # ax[0].imshow(im)
-      # ax[0].axis('off')
-      # ax[1].imshow(-qrdata, cmap='gray')
-      plt.imshow(im)
-      plt.axis('off')
+      fig, ax = plt.subplots(1, 2)
+      ax[0].imshow(mask <= i)
+      ax[0].axis('off')
+      ax[1].imshow(-qrdata, cmap='gray')
+      ax[1].axis('off')
       plt.show()
-    return rawQRParse(qrdata)
+
+    return data
   except Exception as e:
     if verbose >= 1:
       print(e)
     return "An error occurred"
 
-# import os
-# files = os.listdir('qrcode')
-
-# for file in files:
-#   print(file, readQR('qrcode/' + file))
-
-print(readQR('img/test3.png', verbose=1))
-
-# 7785-v4.png 5382-v3.png
+print("Start")
+print(readQR('img/test2.jpg', verbose=2))
