@@ -1,3 +1,4 @@
+# CS406.P11- Final project: DETECT AND SCAN QR CODE
 Danh sách các thành viên:
 
     Phan Quốc Vỹ - 21522814
