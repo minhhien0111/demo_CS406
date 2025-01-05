@@ -1,0 +1,10 @@
+streamlit
+matplotlib
+Pillow
+numpy
+opencv-python
+quads
+tqdm
+scipy
+os
+gf2x
